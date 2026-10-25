@@ -1,0 +1,1456 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="description" content="Ein Blatt im Wind: Tippen, fliegen, MÃ¼nzen sammeln und neue BlÃ¤tter freispielen.">
+<meta name="theme-color" content="#2c4428">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Blattflug">
+<style>
+  /* Abstand zu Notch und Home-Leiste, wie ihn sonst die Artifact-HÃ¼lle setzt */
+  :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+</style>
+</head>
+<body>
+<title>Blattflug</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap">
+<style>
+/* Layout: eine bildschirmhohe Spielspalte (max. 480px) in der Mitte; HTML-Menüs liegen über dem Canvas. */
+:root {
+  --sky: #7cc7e0;
+  --ink: #22331f;
+  --paper: #fbfaf2;
+  --paper-leaf: #eaf1dc;
+  --moss: #4f8a3c;
+  --moss-dark: #33612a;
+  --coin: #f2b630;
+  --coin-dark: #b9821a;
+  --frame: #2c4428;
+  --alert: #c8553d;
+  --font-display: "Baloo 2", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+html { height: 100%; box-sizing: border-box; }
+*, *::before, *::after { box-sizing: inherit; }
+[hidden] { display: none !important; }
+body {
+  height: 100%; margin: 0; overflow: hidden;
+  background: var(--frame); color: var(--ink);
+  font-family: var(--font-display);
+  touch-action: manipulation; -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#app {
+  position: relative; height: 100%; max-width: 480px; margin: 0 auto;
+  overflow: hidden; background: var(--sky);
+}
+#game { display: block; width: 100%; height: 100%; touch-action: none; }
+
+/* HUD */
+.hud { position: absolute; inset: 0 0 auto; pointer-events: none; }
+.score {
+  position: absolute; top: 18px; left: 0; right: 0; text-align: center;
+  font-size: 64px; font-weight: 800; line-height: 1; color: var(--paper);
+  -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill;
+  font-variant-numeric: tabular-nums;
+}
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--paper); color: var(--ink); border-radius: 999px;
+  padding: 3px 12px 3px 6px; font-weight: 800; font-size: 18px;
+  box-shadow: 0 3px 0 rgba(34, 51, 31, .3); font-variant-numeric: tabular-nums;
+}
+.hud .pill { position: absolute; top: 14px; left: max(14px, env(safe-area-inset-left, 0px)); }
+.coin-ico {
+  display: inline-block; width: 20px; height: 20px; border-radius: 50%; flex: none;
+  background: radial-gradient(circle at 35% 35%, #ffe490, var(--coin) 55%, var(--coin-dark));
+  box-shadow: inset 0 0 0 2px var(--coin-dark);
+}
+.icon-btn {
+  position: absolute; top: 12px; right: max(12px, env(safe-area-inset-right, 0px)); z-index: 5;
+  width: 42px; height: 42px; border-radius: 50%; border: 0; cursor: pointer;
+  background: var(--paper); color: var(--ink); display: grid; place-items: center;
+  box-shadow: 0 3px 0 rgba(34, 51, 31, .3);
+}
+.icon-btn svg { width: 22px; height: 22px; }
+.icon-btn:focus-visible, .btn:focus-visible { outline: 3px solid var(--coin); outline-offset: 3px; }
+.hint {
+  position: absolute; left: 0; right: 0; top: 58%; text-align: center; pointer-events: none;
+  font-size: 26px; font-weight: 800; color: var(--paper);
+  -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse { 50% { transform: scale(1.08); } }
+
+/* Overlays */
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding-block: 24px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.overlay.dim { background: rgba(34, 51, 31, .38); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+.overlay.menu { justify-content: space-between; padding-block: 64px 36px; }
+#shop { padding-block: 66px 24px; }
+.brand { text-align: center; }
+.eyebrow {
+  margin: 0; font-size: 15px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink); opacity: .75;
+}
+h1 {
+  margin: 0; font-size: clamp(56px, 17vw, 78px); line-height: .95; font-weight: 800;
+  color: var(--paper); -webkit-text-stroke: 5px var(--ink); paint-order: stroke fill;
+  text-shadow: 0 6px 0 var(--ink); transform: rotate(-3deg); text-wrap: balance;
+}
+.menu-bottom { width: min(100%, 340px); display: flex; flex-direction: column; gap: 12px; }
+.stats, .result { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stats > div, .result > div {
+  background: var(--paper); border-radius: 16px; padding: 6px 10px 8px; text-align: center;
+  box-shadow: 0 3px 0 rgba(34, 51, 31, .25);
+}
+.result > div { background: var(--paper-leaf); box-shadow: none; }
+.label { display: block; font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; opacity: .7; }
+.stats strong, .result strong {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 30px; line-height: 1.1; font-variant-numeric: tabular-nums;
+}
+.btn {
+  font: inherit; font-weight: 800; font-size: 22px; line-height: 1.2;
+  border: 0; border-radius: 999px; padding: 13px 22px; cursor: pointer; width: 100%;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  transition: transform .08s;
+}
+.btn:active:not(:disabled) { transform: translateY(3px); }
+.primary { background: var(--moss); color: var(--paper); box-shadow: 0 5px 0 var(--moss-dark); }
+.secondary { background: var(--paper); color: var(--ink); box-shadow: 0 4px 0 rgba(34, 51, 31, .35); }
+.panel .secondary { background: var(--paper-leaf); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.small { font-size: 17px; padding: 6px 12px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.panel {
+  width: min(100%, 360px); max-height: 100%; overflow-y: auto;
+  background: var(--paper); border-radius: 26px; padding: 22px 20px;
+  display: flex; flex-direction: column; gap: 14px; text-align: center;
+  box-shadow: 0 8px 0 rgba(34, 51, 31, .3), 0 24px 40px rgba(0, 0, 0, .2);
+}
+h2 { margin: 0; font-size: 34px; line-height: 1.05; text-wrap: balance; }
+.badge {
+  margin: 0; align-self: center; background: var(--coin); color: var(--ink);
+  font-weight: 800; border-radius: 999px; padding: 2px 14px; transform: rotate(-2deg);
+}
+.earned { margin: 0; display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 700; font-size: 17px; }
+.sub { margin: -6px 0 0; font-size: 16px; opacity: .8; }
+
+/* Shop */
+.shop-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.shop-head .pill { box-shadow: none; background: var(--paper-leaf); }
+.grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+  overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 3px;
+}
+.card {
+  background: var(--paper-leaf); border-radius: 18px; padding: 8px 8px 10px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.card.active { outline: 3px solid var(--moss); }
+.card canvas { width: 76px; height: 76px; }
+.card .name { font-weight: 800; font-size: 17px; line-height: 1.15; }
+.card .state { font-size: 13px; opacity: .7; min-height: 1.3em; }
+.card .btn { margin-top: 4px; }
+.card.locked canvas { filter: saturate(.25) brightness(1.05); opacity: .7; }
+.card.exclusive.locked canvas { filter: brightness(0) opacity(.25); }
+.card .ach-name {
+  font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--moss-dark);
+}
+.card .bar { width: 100%; height: 8px; margin-top: 6px; border-radius: 99px; background: rgba(34, 51, 31, .12); overflow: hidden; }
+.card .bar > i { display: block; height: 100%; background: var(--coin); border-radius: inherit; }
+.card .qn { font-size: 12px; opacity: .7; font-variant-numeric: tabular-nums; }
+.card.exclusive .state { text-align: center; line-height: 1.25; }
+.grid-head {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 0 8px; margin-top: 10px; text-align: left;
+}
+.grid-head h3 { margin: 0; font-size: 24px; }
+.grid-head span { font-weight: 800; opacity: .7; font-variant-numeric: tabular-nums; }
+.grid-head p { flex-basis: 100%; margin: 0; font-size: 14px; opacity: .75; }
+.ach {
+  margin: 0; background: var(--moss); color: var(--paper); border-radius: 14px;
+  padding: 8px 12px; font-weight: 700; font-size: 16px; line-height: 1.3;
+}
+
+/* Tagesbonus */
+.days { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.day {
+  background: var(--paper-leaf); border-radius: 14px; padding: 6px 4px 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; font-weight: 800;
+}
+.day .label { font-size: 11px; }
+.day .amt { font-size: 18px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.day .check { font-size: 17px; line-height: 20px; color: var(--moss-dark); }
+.day.big { grid-column: span 2; }
+.day.done { opacity: .55; }
+.day.today { background: var(--coin); box-shadow: inset 0 0 0 3px var(--coin-dark); }
+.day.future { opacity: .8; }
+
+/* Aufgaben */
+.quest-list { display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.quest {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center;
+  background: var(--paper-leaf); border-radius: 14px; padding: 8px 10px;
+}
+.quest .qt { grid-column: 1; font-weight: 700; font-size: 15px; line-height: 1.2; }
+.quest .bar { grid-column: 1; height: 8px; border-radius: 99px; background: rgba(34, 51, 31, .12); overflow: hidden; }
+.quest .bar > i { display: block; height: 100%; background: var(--moss); border-radius: inherit; }
+.quest .qn { grid-column: 1; font-size: 12px; opacity: .7; font-variant-numeric: tabular-nums; }
+.quest .side { grid-column: 2; grid-row: 1 / 4; }
+.quest .side .btn { width: auto; }
+.quest.claimed { opacity: .6; }
+.quest-list.compact .quest { padding: 6px 10px; }
+.quest-list.compact .qt { font-size: 14px; }
+.reward { display: inline-flex; align-items: center; gap: 4px; font-weight: 800; font-size: 16px; opacity: .8; font-variant-numeric: tabular-nums; }
+.count {
+  display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px;
+  border-radius: 99px; background: var(--alert); color: var(--paper); font-size: 14px; line-height: 1;
+}
+.streak { margin: 0; font-size: 15px; font-weight: 700; }
+.install-hint {
+  margin: 0; background: var(--paper); border-radius: 14px; padding: 8px 12px;
+  font-size: 15px; font-weight: 700; line-height: 1.3; text-align: center;
+  box-shadow: 0 3px 0 rgba(34, 51, 31, .25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hint { animation: none; }
+  .btn { transition: none; }
+}
+</style>
+
+<div id="app">
+  <canvas id="game" aria-label="Spielfeld: Tippen, um das Blatt fliegen zu lassen"></canvas>
+
+  <div class="hud" id="hud" hidden>
+    <div class="pill"><span class="coin-ico"></span><span id="hudCoins">0</span></div>
+    <div class="score" id="hudScore">0</div>
+  </div>
+  <div class="hint" id="hint" hidden>Tippen zum Fliegen</div>
+
+  <button class="icon-btn" id="muteBtn" type="button" aria-label="Ton ausschalten">
+    <svg id="icoOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+    <svg id="icoOff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M17 9l5 6M22 9l-5 6"/></svg>
+  </button>
+
+  <section class="overlay menu" id="menu">
+    <header class="brand">
+      <p class="eyebrow">Ein Blatt im Wind</p>
+      <h1>Blattflug</h1>
+    </header>
+    <div class="menu-bottom">
+      <div class="stats">
+        <div><span class="label">Rekord</span><strong id="menuBest">0</strong></div>
+        <div><span class="label">Münzen</span><strong><span class="coin-ico"></span><span id="menuCoins">0</span></strong></div>
+      </div>
+      <button class="btn primary" id="playBtn" type="button">Spielen</button>
+      <div class="row">
+        <button class="btn secondary" id="questBtn" type="button">Aufgaben <span class="count" id="questCount" hidden>0</span></button>
+        <button class="btn secondary" id="shopBtn" type="button">Blätter</button>
+      </div>
+      <button class="btn secondary small" id="installBtn" type="button" hidden>Als App installieren</button>
+      <p class="install-hint" id="iosHint" hidden>Als App spielen: Tippe auf „Teilen“ und dann auf „Zum Home-Bildschirm“.</p>
+    </div>
+  </section>
+
+  <section class="overlay dim" id="daily" hidden>
+    <div class="panel">
+      <h2>Tagesbonus</h2>
+      <p class="sub" id="dailySub">Hol dir jeden Tag Münzen ab.</p>
+      <div class="days" id="dailyDays"></div>
+      <button class="btn primary" id="dailyBtn" type="button">Abholen</button>
+    </div>
+  </section>
+
+  <section class="overlay dim" id="quests" hidden>
+    <div class="panel">
+      <div class="shop-head">
+        <h2>Aufgaben</h2>
+        <div class="pill"><span class="coin-ico"></span><span id="questCoins">0</span></div>
+      </div>
+      <p class="sub">Jeden Tag gibt es drei neue Aufgaben.</p>
+      <div class="quest-list" id="questList"></div>
+      <p class="streak" id="streakInfo"></p>
+      <button class="btn secondary" id="questBack" type="button">Zurück</button>
+    </div>
+  </section>
+
+  <section class="overlay dim" id="over" hidden>
+    <div class="panel">
+      <h2 id="overTitle">Hängengeblieben!</h2>
+      <div class="result">
+        <div><span class="label">Punkte</span><strong id="overScore">0</strong></div>
+        <div><span class="label">Rekord</span><strong id="overBest">0</strong></div>
+      </div>
+      <p class="badge" id="newBest" hidden>Neuer Rekord!</p>
+      <p class="earned"><span class="coin-ico"></span>+<span id="overCoins">0</span> Münzen · gesamt <span id="overTotal">0</span></p>
+      <p class="ach" id="overAch" hidden></p>
+      <div class="quest-list compact" id="overQuests"></div>
+      <button class="btn primary" id="againBtn" type="button">Nochmal</button>
+      <div class="row">
+        <button class="btn secondary small" id="overShopBtn" type="button">Blätter</button>
+        <button class="btn secondary small" id="menuBtn" type="button">Menü</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="overlay dim" id="shop" hidden>
+    <div class="panel">
+      <div class="shop-head">
+        <h2>Blätter</h2>
+        <div class="pill"><span class="coin-ico"></span><span id="shopCoins">0</span></div>
+      </div>
+      <p class="sub">Sammle im Flug Münzen und schalte neue Blätter frei.</p>
+      <div class="grid" id="shopGrid"></div>
+      <button class="btn secondary" id="backBtn" type="button">Zurück</button>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  // ---------- Konstanten ----------
+  const H = 640, GROUND = 72, PLAY_H = H - GROUND;
+  const GRAV = 1250, FLAP = -370, MAXFALL = 430, R = 11, LEAF_S = 15;
+  const SPACING = 220, TRUNK_W = 62, GAP_START = 185, GAP_MIN = 138;
+  const MAGNET_T = 8, SHIELD_T = 12, MAGNET_R = 150, INV_T = 1.2;
+  const C = {
+    skyTop: '#6dbfdc', skyLow: '#d9f1e3', sun: '#fff4c2',
+    hillFar: '#a6d4b8', hillNear: '#7cb886',
+    barkDark: '#5a3d26', barkLight: '#8a6342', leafTuft: '#4f8a3c',
+    grass: '#5fa944', grassDark: '#4a8c34', dirt: '#8a6a43',
+    coin: '#f2b630', coinDark: '#b9821a', coinLight: '#ffe490',
+    ink: '#22331f', paper: '#fbfaf2'
+  };
+
+  const SKINS = [
+    { id: 'linde',    name: 'Lindenblatt',    price: 0,    shape: 'heart',  fill: '#5aa53c', vein: '#2f6b22' },
+    { id: 'buche',    name: 'Buchenblatt',    price: 100,  shape: 'oval',   fill: '#8cbf3f', vein: '#4d7a1c' },
+    { id: 'herbst',   name: 'Herbstahorn',    price: 250,  shape: 'maple',  fill: '#e0702b', vein: '#9c3f12' },
+    { id: 'eiche',    name: 'Eichenblatt',    price: 400,  shape: 'oak',    fill: '#b0813a', vein: '#6a4a14' },
+    { id: 'ginkgo',   name: 'Ginkgo',         price: 600,  shape: 'ginkgo', fill: '#f0c53a', vein: '#a67d0c' },
+    { id: 'feuer',    name: 'Feuerahorn',     price: 800,  shape: 'maple',  fill: '#c9302c', vein: '#7a1512' },
+    { id: 'klee',     name: 'Glücksklee',     price: 1000, shape: 'clover', fill: '#3fae5a', vein: '#1f6e33' },
+    { id: 'sakura',   name: 'Kirschblüte',    price: 1400, shape: 'petal',  fill: '#f6a9c2', vein: '#c9577f' },
+    { id: 'lavendel', name: 'Lavendelblüte',  price: 1800, shape: 'petal',  fill: '#b49be0', vein: '#6c4fa8' },
+    { id: 'frost',    name: 'Frostblatt',     price: 2500, shape: 'oval',   fill: '#bfe6f5', vein: '#4f8fb0', shine: true },
+    { id: 'gold',     name: 'Goldahorn',      price: 3500, shape: 'maple',  fill: '#f5c542', vein: '#9a700a', shine: true },
+    { id: 'regenbogen', name: 'Regenbogenblatt', price: 5000, shape: 'heart', fill: '#ffffff', vein: '#3a3a5a', rainbow: true },
+    // Exklusiv: nur über Erfolge (ach) erhältlich, nicht kaufbar
+    { id: 'spross',    name: 'Sprössling',     shape: 'heart',   fill: '#a8d86a', vein: '#5c8f2a', ach: 'erster' },
+    { id: 'kupfer',    name: 'Kupferbuche',    shape: 'oval',    fill: '#c46a3a', vein: '#7a3816', shine: true, ach: 'sammler' },
+    { id: 'feder',     name: 'Feder',          shape: 'feather', fill: '#f4f1ea', vein: '#8a8f99', ach: 'feder' },
+    { id: 'edelweiss', name: 'Edelweiß',       shape: 'petal',   fill: '#fbfbf6', vein: '#9aa39a', ach: 'treue' },
+    { id: 'kristall',  name: 'Kristallginkgo', shape: 'ginkgo',  fill: '#9fd9f0', vein: '#2f7aa0', shine: true, ach: 'schild' },
+    { id: 'feuerklee', name: 'Feuerklee',      shape: 'clover',  fill: '#e8553a', vein: '#8a2412', ach: 'fleiss' },
+    { id: 'nacht',     name: 'Nachtahorn',     shape: 'maple',   fill: '#2c3e74', vein: '#9fb4ff', shine: true, ach: 'ausdauer' },
+    { id: 'phoenix',   name: 'Phönixfeder',    shape: 'feather', grad: ['#ffd23f', '#ff8c1a', '#e0301e'], vein: '#7a1a0c', shine: true, ach: 'legende' }
+  ];
+
+  const ACHIEVEMENTS = [
+    { id: 'erster',   name: 'Erster Flug',   desc: 'Erreiche 5 Punkte in einer Runde',        stat: 'best',      goal: 5,   skin: 'spross' },
+    { id: 'sammler',  name: 'Münzsammler',   desc: 'Sammle insgesamt 500 Münzen',             stat: 'coins',     goal: 500, skin: 'kupfer' },
+    { id: 'feder',    name: 'Federleicht',   desc: 'Erreiche 25 Punkte in einer Runde',       stat: 'best',      goal: 25,  skin: 'feder' },
+    { id: 'treue',    name: 'Treue Seele',   desc: 'Hol dir 7 Tage in Folge den Tagesbonus',  stat: 'maxStreak', goal: 7,   skin: 'edelweiss' },
+    { id: 'schild',   name: 'Schildmeister', desc: 'Lass den Schild 10 Treffer abfangen',     stat: 'saves',     goal: 10,  skin: 'kristall' },
+    { id: 'fleiss',   name: 'Fleißig',       desc: 'Schaffe 20 Tagesaufgaben',                stat: 'quests',    goal: 20,  skin: 'feuerklee' },
+    { id: 'ausdauer', name: 'Ausdauer',      desc: 'Spiele 100 Runden',                       stat: 'runs',      goal: 100, skin: 'nacht' },
+    { id: 'legende',  name: 'Legende',       desc: 'Erreiche 50 Punkte in einer Runde',       stat: 'best',      goal: 50,  skin: 'phoenix' }
+  ];
+
+  // ---------- Speicher ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('blattflug.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('blattflug.' + k, JSON.stringify(v)); } catch (e) {} }
+  };
+  const save = {
+    coins: store.get('coins', 0),
+    best: store.get('best', 0),
+    owned: store.get('owned', ['linde']),
+    skin: store.get('skin', 'linde'),
+    muted: store.get('muted', false),
+    daily: store.get('daily', { last: null, streak: 0 }),
+    quests: store.get('quests', null),
+    stats: Object.assign({ runs: 0, gaps: 0, coins: 0, saves: 0, quests: 0, maxStreak: 0 }, store.get('stats', {})),
+    achieved: store.get('achieved', [])
+  };
+  if (!SKINS.some(s => s.id === save.skin)) save.skin = 'linde';
+  save.stats.maxStreak = Math.max(save.stats.maxStreak, save.daily.streak || 0);
+  function persist() { for (const k in save) store.set(k, save[k]); }
+  const currentSkin = () => SKINS.find(s => s.id === save.skin);
+
+  // ---------- Tagesbonus & Tagesaufgaben ----------
+  const DAILY_REWARDS = [20, 30, 40, 60, 80, 100, 150];
+  const QUEST_TYPES = {
+    coins:   { text: n => `Sammle ${n} Münzen`, tiers: [[25, 40], [45, 70], [70, 110]] },
+    score:   { text: n => `Erreiche ${n} Punkte in einer Runde`, tiers: [[8, 40], [15, 70], [25, 120]] },
+    runs:    { text: n => `Spiele ${n} Runden`, tiers: [[3, 30], [5, 50], [8, 80]] },
+    gaps:    { text: n => `Fliege durch ${n} Lücken`, tiers: [[25, 35], [50, 60], [90, 100]] },
+    shields: { text: n => n === 1 ? 'Sammle einen Schild' : `Sammle ${n} Schilde`, tiers: [[1, 40], [2, 70], [3, 110]] },
+    magnets: { text: n => n === 1 ? 'Sammle einen Magneten' : `Sammle ${n} Magnete`, tiers: [[1, 40], [2, 70], [3, 110]] },
+    saves:   { text: n => n === 1 ? 'Lass den Schild einen Treffer abfangen' : `Lass den Schild ${n} Treffer abfangen`, tiers: [[1, 60], [2, 100], [3, 150]] }
+  };
+
+  function dayKey(offset = 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  // Liefert den Serientag (1–7), der heute dran ist bzw. schon abgeholt wurde.
+  function dailyState() {
+    const d = save.daily;
+    if (d.last === dayKey()) return { claimed: true, day: d.streak };
+    return { claimed: false, day: d.last === dayKey(-1) ? (d.streak % 7) + 1 : 1, broken: !!d.last && d.last !== dayKey(-1) };
+  }
+  function claimDaily() {
+    const s = dailyState();
+    if (s.claimed) return;
+    save.coins += DAILY_REWARDS[s.day - 1];
+    save.daily = { last: dayKey(), streak: s.day };
+    save.stats.maxStreak = Math.max(save.stats.maxStreak, s.day);
+    persist();
+  }
+
+  function ensureQuests() {
+    const today = dayKey();
+    if (save.quests && save.quests.date === today) return;
+    const types = Object.keys(QUEST_TYPES).sort(() => Math.random() - 0.5).slice(0, 3);
+    const tiers = [0, 1, 2].sort(() => Math.random() - 0.5);
+    save.quests = {
+      date: today,
+      list: types.map((type, i) => {
+        const [target, reward] = QUEST_TYPES[type].tiers[tiers[i]];
+        return { type, target, reward, progress: 0, claimed: false };
+      })
+    };
+    store.set('quests', save.quests);
+  }
+  const claimableQuests = () => save.quests ? save.quests.list.filter(q => q.progress >= q.target && !q.claimed).length : 0;
+
+  // ---------- Ton ----------
+  let actx = null;
+  function beep(freq, dur, type = 'sine', vol = 0.12, slide = 0, delay = 0) {
+    if (save.muted) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === 'suspended') actx.resume();
+      const t0 = actx.currentTime + delay;
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t0);
+      if (slide) o.frequency.exponentialRampToValueAtTime(freq * slide, t0 + dur);
+      g.gain.setValueAtTime(vol, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+      o.connect(g).connect(actx.destination);
+      o.start(t0); o.stop(t0 + dur);
+    } catch (e) {}
+  }
+  const sfx = {
+    flap: () => beep(380, 0.12, 'triangle', 0.07, 1.7),
+    coin: () => { beep(988, 0.07, 'square', 0.04); beep(1480, 0.12, 'square', 0.04, 0, 0.06); },
+    point: () => beep(660, 0.06, 'sine', 0.05),
+    hit: () => beep(220, 0.35, 'sawtooth', 0.07, 0.35),
+    power: () => { beep(523, 0.1, 'triangle', 0.08); beep(784, 0.1, 'triangle', 0.08, 0, 0.08); beep(1047, 0.2, 'triangle', 0.08, 0, 0.16); },
+    shieldBreak: () => { beep(900, 0.18, 'square', 0.05, 0.4); beep(500, 0.25, 'triangle', 0.06, 0.5, 0.05); },
+    buy: () => { beep(660, 0.08, 'triangle', 0.08); beep(880, 0.08, 'triangle', 0.08, 0, 0.08); beep(1320, 0.16, 'triangle', 0.08, 0, 0.16); }
+  };
+
+  // ---------- Blattformen ----------
+  function polar(p, fn, sx, sy) {
+    const N = 140;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N * Math.PI * 2, r = fn(t);
+      const x = Math.cos(t) * r * sx, y = Math.sin(t) * r * sy;
+      i ? p.lineTo(x, y) : p.moveTo(x, y);
+    }
+    p.closePath();
+  }
+  const PATHS = {}, VEINS = {};
+  (function buildShapes() {
+    let p;
+    // Linde: Herzblatt, Spitze zeigt in Flugrichtung
+    p = new Path2D();
+    p.moveTo(-0.9, 0);
+    p.bezierCurveTo(-1.05, -1.05, 0.45, -1.0, 1.15, 0);
+    p.bezierCurveTo(0.45, 1.0, -1.05, 1.05, -0.9, 0);
+    PATHS.heart = p;
+    VEINS.heart = [[-0.9, 0, 1.0, 0], [-1.45, 0.15, -0.9, 0]];
+    for (const x of [-0.45, 0, 0.42]) {
+      const h = 0.45 * (1 - x * 0.35);
+      VEINS.heart.push([x, 0, x + 0.32, -h], [x, 0, x + 0.32, h]);
+    }
+    // Buche: schlankes, ovales Blatt
+    p = new Path2D();
+    p.moveTo(-0.95, 0);
+    p.bezierCurveTo(-0.65, -0.8, 0.7, -0.72, 1.2, 0);
+    p.bezierCurveTo(0.7, 0.72, -0.65, 0.8, -0.95, 0);
+    PATHS.oval = p;
+    VEINS.oval = [[-1.5, 0.12, -0.95, 0], [-0.95, 0, 1.05, 0]];
+    for (const x of [-0.55, -0.15, 0.25, 0.62]) VEINS.oval.push([x, 0, x + 0.28, -0.42], [x, 0, x + 0.28, 0.42]);
+    // Feder: lange Fahne mit Kiel
+    p = new Path2D();
+    p.moveTo(-0.95, 0.02);
+    p.bezierCurveTo(-0.45, -0.58, 0.85, -0.48, 1.4, -0.05);
+    p.bezierCurveTo(0.85, 0.4, -0.45, 0.52, -0.95, 0.02);
+    PATHS.feather = p;
+    VEINS.feather = [[-1.6, 0.1, 1.3, -0.04]];
+    for (let x = -0.65; x < 1.05; x += 0.24) VEINS.feather.push([x, 0.02, x + 0.26, -0.36], [x, 0.02, x + 0.26, 0.34]);
+    // Ahorn: fünf spitze Lappen
+    p = new Path2D();
+    polar(p, t => { const c = Math.max(0, Math.cos(5 * t)); return 0.5 + 0.55 * c * c + 0.05 * Math.cos(15 * t); }, 1, 1);
+    PATHS.maple = p;
+    VEINS.maple = [[-1.4, 0.1, -0.45, 0], [-0.45, 0, 0, 0]];
+    for (let k = -2; k <= 2; k++) { const a = k * Math.PI * 2 / 5; VEINS.maple.push([0, 0, Math.cos(a) * 0.85, Math.sin(a) * 0.85]); }
+    // Eiche: runde Buchten
+    p = new Path2D();
+    polar(p, t => 0.82 + 0.18 * Math.cos(9 * t), 1.2, 0.68);
+    PATHS.oak = p;
+    VEINS.oak = [[-1.55, 0.12, -1.1, 0], [-1.1, 0, 1.05, 0]];
+    for (const x of [-0.6, -0.2, 0.2, 0.6]) VEINS.oak.push([x, 0, x + 0.22, -0.48], [x, 0, x + 0.22, 0.48]);
+    // Ginkgo: Fächer mit Kerbe
+    p = new Path2D();
+    p.moveTo(-0.5, 0);
+    p.quadraticCurveTo(0.1, -0.3, 0.7, -0.95);
+    p.quadraticCurveTo(1.08, -0.5, 0.95, -0.08);
+    p.lineTo(0.72, 0);
+    p.lineTo(0.95, 0.08);
+    p.quadraticCurveTo(1.08, 0.5, 0.7, 0.95);
+    p.quadraticCurveTo(0.1, 0.3, -0.5, 0);
+    p.closePath();
+    PATHS.ginkgo = p;
+    VEINS.ginkgo = [[-1.3, 0.1, -0.5, 0]];
+    for (let k = -3; k <= 3; k++) { if (!k) continue; const a = k * 0.19; VEINS.ginkgo.push([-0.5, 0, -0.5 + Math.cos(a) * 1.15, Math.sin(a) * 1.15]); }
+    // Glücksklee: vier Herzchen
+    p = new Path2D();
+    const ang = [1, 3, 5, 7].map(i => i * Math.PI / 4);
+    for (const a of ang) for (const side of [-1, 1]) {
+      const lx = 0.45, ly = side * 0.21;
+      const cx = lx * Math.cos(a) - ly * Math.sin(a), cy = lx * Math.sin(a) + ly * Math.cos(a);
+      p.moveTo(cx + 0.34, cy); p.arc(cx, cy, 0.34, 0, Math.PI * 2);
+    }
+    p.moveTo(0.22, 0); p.arc(0, 0, 0.22, 0, Math.PI * 2);
+    PATHS.clover = p;
+    VEINS.clover = [[0, 0, -1.25, 0.45]].concat(ang.map(a => [0, 0, Math.cos(a) * 0.62, Math.sin(a) * 0.62]));
+    // Kirschblüte: fünf eingekerbte Blütenblätter
+    p = new Path2D();
+    polar(p, t => { const c = Math.abs(Math.cos(2.5 * t)); return 0.5 + 0.52 * Math.sqrt(c) - 0.17 * Math.pow(c, 40); }, 1, 1);
+    PATHS.petal = p;
+    VEINS.petal = [];
+    for (let k = 0; k < 5; k++) { const a = k * Math.PI * 2 / 5; VEINS.petal.push([0, 0, Math.cos(a) * 0.5, Math.sin(a) * 0.5]); }
+  })();
+
+  function drawLeaf(g, skin, s, t = 0) {
+    g.save();
+    g.scale(s, s);
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    const p = PATHS[skin.shape];
+    if (skin.rainbow) {
+      const rb = g.createLinearGradient(-1, -1, 1, 1);
+      for (let i = 0; i <= 5; i++) rb.addColorStop(i / 5, `hsl(${(i * 60 + t * 90) % 360}, 85%, 62%)`);
+      g.fillStyle = rb;
+    } else if (skin.grad) {
+      const gr = g.createLinearGradient(-1.2, 0, 1.2, 0);
+      skin.grad.forEach((c, i) => gr.addColorStop(i / (skin.grad.length - 1), c));
+      g.fillStyle = gr;
+    } else g.fillStyle = skin.fill;
+    g.fill(p);
+    if (skin.shine) {
+      const pos = (Math.sin(t * 2) + 1) / 2;
+      const sh = g.createLinearGradient(-1.2, -1.2, 1.2, 1.2);
+      sh.addColorStop(0, 'rgba(255,255,255,0)');
+      sh.addColorStop(Math.max(0, pos - 0.15), 'rgba(255,255,255,0)');
+      sh.addColorStop(pos, 'rgba(255,255,240,0.75)');
+      sh.addColorStop(Math.min(1, pos + 0.15), 'rgba(255,255,255,0)');
+      sh.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = sh;
+      g.fill(p);
+    }
+    g.strokeStyle = skin.vein;
+    g.lineWidth = 0.09;
+    g.stroke(p);
+    g.lineWidth = 0.07;
+    g.beginPath();
+    for (const [a, b, c, d] of VEINS[skin.shape]) { g.moveTo(a, b); g.lineTo(c, d); }
+    g.stroke();
+    if (skin.shape === 'petal') {
+      g.fillStyle = '#f4d35e';
+      for (let k = 0; k < 5; k++) { const a = k * Math.PI * 2 / 5 + 0.6; g.beginPath(); g.arc(Math.cos(a) * 0.22, Math.sin(a) * 0.22, 0.07, 0, Math.PI * 2); g.fill(); }
+      g.beginPath(); g.arc(0, 0, 0.12, 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+  }
+
+  function preview(canvas, skin, size) {
+    const d = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = size * d; canvas.height = size * d;
+    const g = canvas.getContext('2d');
+    g.setTransform(d, 0, 0, d, 0, 0);
+    g.translate(size / 2 + 2, size / 2);
+    g.rotate(-0.35);
+    drawLeaf(g, skin, size * 0.3, 0.6);
+  }
+
+  // ---------- Canvas & Spielzustand ----------
+  const $ = id => document.getElementById(id);
+  const app = $('app'), cv = $('game'), ctx = cv.getContext('2d');
+  let W = 360, skyGrad = null;
+
+  const G = {
+    state: 'menu', paused: false, t: 0, scroll: 0,
+    leaf: { x: 110, y: PLAY_H * 0.42, vy: 0, rot: 0 },
+    obs: [], coins: [], parts: [], items: [],
+    obsCount: 0, nextPowerAt: 4, magnet: 0, shield: 0, inv: 0, newAch: [],
+    score: 0, runCoins: 0, speed: 150, lastGapY: null, deadT: 0, overShown: false, cause: ''
+  };
+  const clouds = Array.from({ length: 5 }, () => ({ x: Math.random() * 520, y: 30 + Math.random() * 210, s: 0.55 + Math.random() * 0.7 }));
+  const streaks = Array.from({ length: 6 }, () => ({ x: Math.random() * 520, y: 40 + Math.random() * (PLAY_H - 80), len: 20 + Math.random() * 30 }));
+
+  function resize() {
+    const w = app.clientWidth, h = app.clientHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    const k = h / H;
+    W = w / k;
+    ctx.setTransform(dpr * k, 0, 0, dpr * k, 0, 0);
+    G.leaf.x = Math.min(W * 0.3, 150);
+    skyGrad = null;
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- UI ----------
+  const ui = {
+    hud: $('hud'), hudScore: $('hudScore'), hudCoins: $('hudCoins'), hint: $('hint'),
+    menu: $('menu'), over: $('over'), shop: $('shop'),
+    menuBest: $('menuBest'), menuCoins: $('menuCoins'),
+    overTitle: $('overTitle'), overScore: $('overScore'), overBest: $('overBest'),
+    newBest: $('newBest'), overCoins: $('overCoins'), overTotal: $('overTotal'),
+    shopCoins: $('shopCoins'), shopGrid: $('shopGrid'),
+    muteBtn: $('muteBtn'), icoOn: $('icoOn'), icoOff: $('icoOff'),
+    daily: $('daily'), dailySub: $('dailySub'), dailyDays: $('dailyDays'), dailyBtn: $('dailyBtn'),
+    quests: $('quests'), questList: $('questList'), questCoins: $('questCoins'), streakInfo: $('streakInfo'),
+    questCount: $('questCount'), overQuests: $('overQuests'), overAch: $('overAch')
+  };
+  let shopReturn = 'menu';
+
+  function showOnly(panel) {
+    for (const p of ['menu', 'over', 'shop', 'daily', 'quests']) ui[p].hidden = p !== panel;
+  }
+  function refreshMenu() {
+    ensureQuests();
+    ui.menuBest.textContent = save.best;
+    ui.menuCoins.textContent = save.coins;
+    const n = claimableQuests();
+    ui.questCount.textContent = n;
+    ui.questCount.hidden = n === 0;
+  }
+
+  // Menü öffnen; ein noch nicht abgeholter Tagesbonus kommt zuerst.
+  function showMenu() {
+    refreshMenu();
+    if (!dailyState().claimed) showDaily();
+    else showOnly('menu');
+  }
+
+  function showDaily() {
+    const s = dailyState();
+    ui.dailyDays.innerHTML = '';
+    DAILY_REWARDS.forEach((r, i) => {
+      const day = i + 1;
+      const el = document.createElement('div');
+      el.className = 'day' + (day === 7 ? ' big' : '') + (day < s.day ? ' done' : day === s.day ? ' today' : ' future');
+      el.innerHTML = `<span class="label">Tag ${day}</span>${day < s.day ? '<span class="check">✓</span>' : '<span class="coin-ico"></span>'}<span class="amt">${r}</span>`;
+      ui.dailyDays.append(el);
+    });
+    ui.dailySub.textContent =
+      s.day > 1 ? `Tag ${s.day} deiner Serie! Komm morgen wieder, sonst beginnt sie von vorn.`
+      : s.broken ? 'Deine Serie ist gerissen. Heute startest du neu bei Tag 1.'
+      : 'Hol dir jeden Tag Münzen ab. Je länger deine Serie, desto mehr gibt es.';
+    ui.dailyBtn.disabled = false;
+    ui.dailyBtn.innerHTML = `<span class="coin-ico"></span>+${DAILY_REWARDS[s.day - 1]} abholen`;
+    showOnly('daily');
+  }
+
+  function renderQuests(el, onClaim) {
+    ensureQuests();
+    el.innerHTML = '';
+    for (const q of save.quests.list) {
+      const done = q.progress >= q.target;
+      const row = document.createElement('div');
+      row.className = 'quest' + (q.claimed ? ' claimed' : '');
+      const t = document.createElement('div');
+      t.className = 'qt'; t.textContent = QUEST_TYPES[q.type].text(q.target);
+      const side = document.createElement('div');
+      side.className = 'side';
+      if (done && !q.claimed) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn primary small';
+        b.innerHTML = `<span class="coin-ico"></span>+${q.reward}`;
+        b.setAttribute('aria-label', `${q.reward} Münzen abholen`);
+        b.onclick = () => {
+          q.claimed = true;
+          save.coins += q.reward;
+          persist(); sfx.buy();
+          renderQuests(el, onClaim);
+          if (onClaim) onClaim();
+        };
+        side.append(b);
+      } else {
+        side.innerHTML = q.claimed ? '<span class="reward">✓</span>' : `<span class="reward"><span class="coin-ico"></span>${q.reward}</span>`;
+      }
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      const fill = document.createElement('i');
+      fill.style.width = (q.progress / q.target * 100) + '%';
+      bar.append(fill);
+      const n = document.createElement('div');
+      n.className = 'qn';
+      n.textContent = q.claimed ? 'Erledigt' : done ? 'Geschafft!' : `${q.progress} / ${q.target}`;
+      row.append(t, side, bar, n);
+      el.append(row);
+    }
+  }
+
+  function openQuests() {
+    const refresh = () => { ui.questCoins.textContent = save.coins; };
+    renderQuests(ui.questList, refresh);
+    refresh();
+    const s = dailyState();
+    ui.streakInfo.textContent = s.claimed
+      ? `Serie: Tag ${s.day} · morgen +${DAILY_REWARDS[s.day % 7]} Münzen`
+      : 'Dein Tagesbonus wartet!';
+    showOnly('quests');
+  }
+  function refreshMute() {
+    ui.icoOn.hidden = save.muted;
+    ui.icoOff.hidden = !save.muted;
+    ui.muteBtn.setAttribute('aria-label', save.muted ? 'Ton einschalten' : 'Ton ausschalten');
+  }
+
+  function renderShop() {
+    ui.shopCoins.textContent = save.coins;
+    ui.shopGrid.innerHTML = '';
+    for (const sk of SKINS.filter(s => !s.ach)) {
+      const owned = save.owned.includes(sk.id), active = save.skin === sk.id;
+      const card = document.createElement('div');
+      card.className = 'card' + (active ? ' active' : '') + (owned ? '' : ' locked');
+      const c = document.createElement('canvas');
+      preview(c, sk, 76);
+      const name = document.createElement('div');
+      name.className = 'name'; name.textContent = sk.name;
+      const state = document.createElement('div');
+      state.className = 'state';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn small ' + (owned ? 'secondary' : 'primary');
+      if (active) {
+        state.textContent = 'Im Flug';
+        btn.textContent = 'Aktiv'; btn.disabled = true;
+      } else if (owned) {
+        state.textContent = 'Freigeschaltet';
+        btn.textContent = 'Wählen';
+        btn.onclick = () => { save.skin = sk.id; persist(); renderShop(); };
+      } else {
+        const missing = sk.price - save.coins;
+        state.textContent = missing > 0 ? `Noch ${missing} Münzen` : 'Freischaltbar';
+        btn.innerHTML = `<span class="coin-ico"></span>${sk.price}`;
+        btn.setAttribute('aria-label', `${sk.name} für ${sk.price} Münzen freischalten`);
+        btn.disabled = missing > 0;
+        btn.onclick = () => {
+          if (save.coins < sk.price) return;
+          save.coins -= sk.price;
+          save.owned.push(sk.id);
+          save.skin = sk.id;
+          persist(); sfx.buy(); renderShop(); refreshMenu();
+        };
+      }
+      card.append(c, name, state, btn);
+      ui.shopGrid.append(card);
+    }
+
+    const head = document.createElement('div');
+    head.className = 'grid-head';
+    head.innerHTML = `<h3>Erfolge</h3><span>${save.achieved.length} / ${ACHIEVEMENTS.length}</span><p>Diese Blätter gibt es nicht zu kaufen. Du bekommst sie nur für Erfolge.</p>`;
+    ui.shopGrid.append(head);
+
+    for (const a of ACHIEVEMENTS) {
+      const sk = SKINS.find(s => s.id === a.skin);
+      const done = save.achieved.includes(a.id), active = save.skin === sk.id;
+      const card = document.createElement('div');
+      card.className = 'card exclusive' + (active ? ' active' : '') + (done ? '' : ' locked');
+      const c = document.createElement('canvas');
+      preview(c, sk, 76);
+      const title = document.createElement('div');
+      title.className = 'ach-name';
+      title.textContent = (done ? '✓ ' : '') + a.name;
+      const name = document.createElement('div');
+      name.className = 'name'; name.textContent = sk.name;
+      const state = document.createElement('div');
+      state.className = 'state';
+      card.append(c, title, name, state);
+      if (done) {
+        state.textContent = active ? 'Im Flug' : 'Freigeschaltet';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn small secondary';
+        if (active) { btn.textContent = 'Aktiv'; btn.disabled = true; }
+        else {
+          btn.textContent = 'Wählen';
+          btn.onclick = () => { save.skin = sk.id; persist(); renderShop(); };
+        }
+        card.append(btn);
+      } else {
+        const val = Math.min(statValue(a.stat), a.goal);
+        state.textContent = a.desc;
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+        const fill = document.createElement('i');
+        fill.style.width = (val / a.goal * 100) + '%';
+        bar.append(fill);
+        const n = document.createElement('div');
+        n.className = 'qn'; n.textContent = `${val} / ${a.goal}`;
+        card.append(bar, n);
+      }
+      ui.shopGrid.append(card);
+    }
+  }
+
+  function openShop(from) {
+    shopReturn = from;
+    renderShop();
+    showOnly('shop');
+  }
+
+  // ---------- Spielablauf ----------
+  // Zählt Aufgabenfortschritt hoch; mode 'max' merkt sich den besten Wert (z. B. Punkte in einer Runde).
+  function questEvent(type, amount = 1, mode = 'add') {
+    if (!save.quests) return;
+    let changed = false;
+    for (const q of save.quests.list) {
+      if (q.type !== type || q.progress >= q.target) continue;
+      const next = mode === 'max' ? Math.max(q.progress, amount) : q.progress + amount;
+      if (next === q.progress) continue;
+      q.progress = Math.min(next, q.target);
+      changed = true;
+      if (q.progress >= q.target) {
+        G.parts.push({ type: 'text', x: W / 2, y: 175, vx: 0, vy: -18, life: 0, max: 1.8, size: 26, text: 'Aufgabe geschafft!' });
+        beep(784, 0.1, 'triangle', 0.07, 0, 0.1); beep(1175, 0.18, 'triangle', 0.07, 0, 0.2);
+        save.stats.quests++;
+        store.set('stats', save.stats);
+        checkAchievements();
+      }
+    }
+    if (changed) store.set('quests', save.quests);
+  }
+
+  // Bestwert zählt live mit, damit Punkte-Erfolge schon während der Runde auslösen.
+  function statValue(stat) {
+    if (stat === 'best') return Math.max(save.best, G.state === 'playing' ? G.score : 0);
+    return save.stats[stat] || 0;
+  }
+
+  // Schaltet erreichte Erfolge frei und gibt die Namen der neu freigeschalteten zurück.
+  function checkAchievements(announce = true) {
+    const fresh = [];
+    for (const a of ACHIEVEMENTS) {
+      if (save.achieved.includes(a.id) || statValue(a.stat) < a.goal) continue;
+      save.achieved.push(a.id);
+      if (!save.owned.includes(a.skin)) save.owned.push(a.skin);
+      fresh.push(a);
+      if (announce) {
+        G.newAch.push(a);
+        G.parts.push({ type: 'text', x: W / 2, y: 220, vx: 0, vy: -14, life: 0, max: 2.4, size: 24, text: `Erfolg: ${a.name}!` });
+        sfx.buy();
+      }
+    }
+    if (fresh.length) { store.set('achieved', save.achieved); store.set('owned', save.owned); }
+    return fresh;
+  }
+
+  function startGame() {
+    ensureQuests();
+    G.obs = []; G.coins = []; G.parts = []; G.items = [];
+    G.obsCount = 0; G.nextPowerAt = 4; G.magnet = 0; G.shield = 0; G.inv = 0; G.newAch = [];
+    G.score = 0; G.runCoins = 0; G.speed = 150; G.lastGapY = null;
+    G.deadT = 0; G.overShown = false; G.paused = false;
+    G.leaf.y = PLAY_H * 0.42; G.leaf.vy = 0; G.leaf.rot = 0;
+    G.state = 'ready';
+    ui.hudScore.textContent = '0';
+    ui.hudCoins.textContent = save.coins;
+    ui.hint.textContent = 'Tippen zum Fliegen';
+    ui.hint.hidden = false;
+    ui.hud.hidden = false;
+    showOnly(null);
+  }
+
+  function toMenu() {
+    G.state = 'menu';
+    G.obs = []; G.coins = []; G.parts = []; G.items = [];
+    ui.hud.hidden = true; ui.hint.hidden = true;
+    showMenu();
+  }
+
+  function flap() {
+    G.leaf.vy = FLAP;
+    sfx.flap();
+    for (let i = 0; i < 4; i++) {
+      G.parts.push({ type: 'puff', x: G.leaf.x - 12, y: G.leaf.y + 8, vx: -60 - Math.random() * 60, vy: 40 + Math.random() * 60, life: 0, max: 0.45, r: 3 + Math.random() * 3 });
+    }
+  }
+
+  function die(cause) {
+    G.state = 'dead';
+    G.cause = cause;
+    G.deadT = 0;
+    if (cause !== 'ground') G.leaf.vy = -160;
+    sfx.hit();
+    if (G.score > save.best) { save.best = G.score; G.newBest = true; } else G.newBest = false;
+    save.stats.runs++;
+    questEvent('runs');
+    checkAchievements();
+    persist();
+  }
+
+  function breakShield() {
+    G.shield = 0;
+    G.inv = INV_T;
+    sfx.shieldBreak();
+    save.stats.saves++;
+    store.set('stats', save.stats);
+    questEvent('saves');
+    checkAchievements();
+    for (let i = 0; i < 10; i++) {
+      const a = i / 10 * Math.PI * 2;
+      G.parts.push({ type: 'shard', x: G.leaf.x + Math.cos(a) * 22, y: G.leaf.y + Math.sin(a) * 22, vx: Math.cos(a) * 140, vy: Math.sin(a) * 140, life: 0, max: 0.5, r: 3 });
+    }
+  }
+
+  function showOver() {
+    G.overShown = true;
+    ui.overTitle.textContent = G.cause === 'ground' ? 'Gelandet!' : 'Hängengeblieben!';
+    ui.overScore.textContent = G.score;
+    ui.overBest.textContent = save.best;
+    ui.newBest.hidden = !G.newBest || G.score === 0;
+    ui.overCoins.textContent = G.runCoins;
+    ui.overTotal.textContent = save.coins;
+    renderQuests(ui.overQuests, () => { ui.overTotal.textContent = save.coins; });
+    ui.overAch.hidden = !G.newAch.length;
+    ui.overAch.textContent = G.newAch
+      .map(a => `Erfolg „${a.name}“: Neues Blatt ${SKINS.find(s => s.id === a.skin).name}!`)
+      .join(' ');
+    showOnly('over');
+  }
+
+  function spawnObstacle(x) {
+    const gap = Math.max(GAP_MIN, GAP_START - G.score * 1.6);
+    const minY = 70 + gap / 2, maxY = PLAY_H - 50 - gap / 2;
+    let y = minY + Math.random() * (maxY - minY);
+    if (G.lastGapY != null) y = Math.min(Math.max(y, G.lastGapY - 180), G.lastGapY + 180);
+    G.lastGapY = y;
+    G.obs.push({ x, gapY: y, gap, passed: false, seed: Math.floor(Math.random() * 1000) });
+    G.obsCount++;
+    if (G.obsCount >= G.nextPowerAt) {
+      G.nextPowerAt = G.obsCount + 6 + Math.floor(Math.random() * 5);
+      G.items.push({ x: x + TRUNK_W / 2, y, kind: Math.random() < 0.5 ? 'magnet' : 'shield', taken: false });
+    } else if (Math.random() < 0.6) G.coins.push({ x: x + TRUNK_W / 2, y, taken: false });
+    if (Math.random() < 0.35) G.coins.push({ x: x + TRUNK_W / 2 + SPACING / 2, y: y + (Math.random() - 0.5) * 70, taken: false });
+  }
+
+  function circleRect(cx, cy, r, x, y, w, h) {
+    const nx = Math.max(x, Math.min(cx, x + w)), ny = Math.max(y, Math.min(cy, y + h));
+    return (cx - nx) ** 2 + (cy - ny) ** 2 < r * r;
+  }
+
+  function hitsTrunk(o, L) {
+    const top = o.gapY - o.gap / 2, bot = o.gapY + o.gap / 2;
+    return circleRect(L.x, L.y, R, o.x, -50, TRUNK_W, top + 50) ||
+           circleRect(L.x, L.y, R, o.x - 6, top - 22, TRUNK_W + 12, 22) ||
+           circleRect(L.x, L.y, R, o.x, bot, TRUNK_W, PLAY_H - bot) ||
+           circleRect(L.x, L.y, R, o.x - 6, bot, TRUNK_W + 12, 22);
+  }
+
+  function update(dt) {
+    G.t += dt;
+    const L = G.leaf;
+    const frozen = G.state === 'dead' || G.paused;
+    const spd = frozen ? 0 : (G.state === 'playing' ? G.speed : 90);
+    G.scroll += spd * dt;
+
+    for (const c of clouds) {
+      c.x -= (spd * 0.15 + 6) * dt;
+      if (c.x < -90 * c.s) { c.x = W + 60; c.y = 30 + Math.random() * 210; }
+    }
+    if (!frozen) for (const s of streaks) {
+      s.x -= (spd * 1.8 + 120) * dt;
+      if (s.x < -s.len) { s.x = W + Math.random() * 200; s.y = 40 + Math.random() * (PLAY_H - 80); }
+    }
+
+    if (G.state === 'menu' || G.state === 'ready') {
+      L.y = PLAY_H * 0.42 + Math.sin(G.t * 3) * 10;
+      L.vy = 0;
+      L.rot = Math.sin(G.t * 2) * 0.15;
+    } else if (G.state === 'playing' && !G.paused) {
+      L.vy = Math.min(L.vy + GRAV * dt, MAXFALL);
+      L.y += L.vy * dt;
+      const target = Math.max(-0.6, Math.min(0.8, L.vy / 500));
+      L.rot += (target - L.rot) * Math.min(1, dt * 10);
+      if (L.y < R) { L.y = R; L.vy = Math.max(L.vy, 0); }
+
+      for (const o of G.obs) o.x -= spd * dt;
+      for (const c of G.coins) c.x -= spd * dt;
+      for (const it of G.items) it.x -= spd * dt;
+      G.obs = G.obs.filter(o => o.x > -TRUNK_W - 20);
+      G.coins = G.coins.filter(c => c.x > -30 && !c.taken);
+      G.items = G.items.filter(it => it.x > -30 && !it.taken);
+
+      G.magnet = Math.max(0, G.magnet - dt);
+      G.shield = Math.max(0, G.shield - dt);
+      G.inv = Math.max(0, G.inv - dt);
+      if (G.magnet > 0) {
+        for (const c of G.coins) {
+          const dx = L.x - c.x, dy = L.y - c.y, d = Math.hypot(dx, dy);
+          if (d < MAGNET_R && d > 0) {
+            const step = Math.min(d, (460 + spd) * dt);
+            c.x += dx / d * step; c.y += dy / d * step;
+          }
+        }
+      }
+      for (const it of G.items) {
+        if ((it.x - L.x) ** 2 + (it.y - L.y) ** 2 < (R + 17) ** 2) {
+          it.taken = true;
+          if (it.kind === 'magnet') G.magnet = MAGNET_T; else G.shield = SHIELD_T;
+          sfx.power();
+          questEvent(it.kind === 'magnet' ? 'magnets' : 'shields');
+          G.parts.push({ type: 'text', x: it.x, y: it.y - 10, vx: 0, vy: -45, life: 0, max: 0.9, text: it.kind === 'magnet' ? 'Magnet!' : 'Schild!' });
+        }
+      }
+      const lastObs = G.obs[G.obs.length - 1];
+      if (!lastObs) spawnObstacle(W + 80);
+      else if (lastObs.x < W - SPACING + 40) spawnObstacle(lastObs.x + SPACING);
+
+      for (const o of G.obs) {
+        if (!o.passed && o.x + TRUNK_W < L.x) {
+          o.passed = true;
+          G.score++;
+          G.speed = 150 + Math.min(G.score, 40) * 1.5;
+          ui.hudScore.textContent = G.score;
+          sfx.point();
+          save.stats.gaps++;
+          questEvent('gaps');
+          questEvent('score', G.score, 'max');
+          checkAchievements();
+        }
+      }
+      for (const c of G.coins) {
+        if (!c.taken && (c.x - L.x) ** 2 + (c.y - L.y) ** 2 < (R + 12) ** 2) {
+          c.taken = true;
+          G.runCoins++; save.coins++;
+          store.set('coins', save.coins);
+          ui.hudCoins.textContent = save.coins;
+          sfx.coin();
+          save.stats.coins++;
+          store.set('stats', save.stats);
+          questEvent('coins');
+          checkAchievements();
+          G.parts.push({ type: 'text', x: c.x, y: c.y - 6, vx: 0, vy: -50, life: 0, max: 0.7, text: '+1' });
+        }
+      }
+      const hit = G.obs.some(o => hitsTrunk(o, L));
+      if (hit && G.inv <= 0) {
+        if (G.shield > 0) breakShield(); else die('trunk');
+      } else if (L.y + R >= PLAY_H) {
+        L.y = PLAY_H - R;
+        if (G.shield > 0 || G.inv > 0) {
+          if (G.shield > 0) breakShield();
+          L.vy = FLAP * 1.15;
+        } else die('ground');
+      }
+    } else if (G.state === 'dead') {
+      if (L.y + R < PLAY_H) {
+        L.vy = Math.min(L.vy + GRAV * dt, MAXFALL);
+        L.y = Math.min(L.y + L.vy * dt, PLAY_H - R);
+        L.rot += dt * 7;
+      }
+      G.deadT += dt;
+      if (G.deadT > 0.85 && !G.overShown) showOver();
+    }
+
+    for (const p of G.parts) { p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+    G.parts = G.parts.filter(p => p.life < p.max);
+  }
+
+  // ---------- Zeichnen ----------
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function hills(off, base, amp, f, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0, PLAY_H);
+    for (let x = 0; x <= W + 16; x += 16) {
+      const X = x + off;
+      ctx.lineTo(x, base - Math.sin(X * f) * amp - Math.sin(X * f * 2.3 + 1.3) * amp * 0.4);
+    }
+    ctx.lineTo(W + 16, PLAY_H);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function cloud(c) {
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.scale(c.s, c.s);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath();
+    ctx.arc(0, 0, 24, 0, Math.PI * 2);
+    ctx.arc(26, -12, 22, 0, Math.PI * 2);
+    ctx.arc(52, 0, 24, 0, Math.PI * 2);
+    ctx.arc(26, 8, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function tuft(x, y, dir, seed) {
+    ctx.fillStyle = C.leafTuft;
+    for (let i = 0; i < 4; i++) {
+      const lx = x + 6 + ((seed * (i + 3) * 17) % (TRUNK_W - 12));
+      ctx.beginPath();
+      ctx.ellipse(lx, y + dir * (5 + (i % 2) * 4), 7, 4, (i % 2 ? 0.5 : -0.5), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function trunk(x, y0, y1, seed, capAtBottom) {
+    if (y1 <= y0) return;
+    const g = ctx.createLinearGradient(x, 0, x + TRUNK_W, 0);
+    g.addColorStop(0, C.barkDark);
+    g.addColorStop(0.35, C.barkLight);
+    g.addColorStop(1, C.barkDark);
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y0, TRUNK_W, y1 - y0);
+    ctx.strokeStyle = 'rgba(40,25,12,0.35)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const gx = x + 10 + ((seed * (i + 1) * 37) % (TRUNK_W - 20));
+      ctx.beginPath();
+      ctx.moveTo(gx, y0);
+      ctx.lineTo(gx + (i % 2 ? 3 : -3), y1);
+      ctx.stroke();
+    }
+    const cy = capAtBottom ? y1 - 22 : y0;
+    ctx.fillStyle = C.barkDark;
+    rr(x - 6, cy, TRUNK_W + 12, 22, 8);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,230,190,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(x, cy + 6); ctx.lineTo(x + TRUNK_W, cy + 6);
+    ctx.stroke();
+    tuft(x, capAtBottom ? y1 : y0, capAtBottom ? 1 : -1, seed);
+  }
+
+  function coin(c) {
+    const sx = Math.max(0.18, Math.abs(Math.cos(G.t * 4 + c.x * 0.03)));
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.scale(sx, 1);
+    ctx.fillStyle = C.coinDark;
+    ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.coin;
+    ctx.beginPath(); ctx.arc(0, 0, 8.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.coinLight;
+    ctx.beginPath(); ctx.ellipse(-2.5, -2.5, 2.5, 4, 0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function magnetIcon(x, y, s) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    ctx.lineCap = 'butt';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#d64545';
+    ctx.beginPath();
+    ctx.moveTo(-6, -6);
+    ctx.lineTo(-6, 1);
+    ctx.arc(0, 1, 6, Math.PI, 0, true);
+    ctx.lineTo(6, -6);
+    ctx.stroke();
+    ctx.fillStyle = '#dfe6ea';
+    ctx.fillRect(-8.5, -10, 5, 4);
+    ctx.fillRect(3.5, -10, 5, 4);
+    ctx.restore();
+  }
+
+  function shieldIcon(x, y, s) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    ctx.beginPath();
+    ctx.moveTo(0, -8.5);
+    ctx.lineTo(7, -5.5);
+    ctx.lineTo(6.5, 1.5);
+    ctx.quadraticCurveTo(4.5, 6.5, 0, 9);
+    ctx.quadraticCurveTo(-4.5, 6.5, -6.5, 1.5);
+    ctx.lineTo(-7, -5.5);
+    ctx.closePath();
+    ctx.fillStyle = '#4aa3df';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#1f5f8b';
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath();
+    ctx.moveTo(-1, -6.5); ctx.lineTo(-5, -4.5); ctx.lineTo(-4.6, 0.5); ctx.lineTo(-1, -1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function powerItem(it) {
+    const y = it.y + Math.sin(G.t * 4 + it.x * 0.02) * 3;
+    const glow = 0.25 + 0.15 * Math.sin(G.t * 6);
+    ctx.fillStyle = `rgba(255,255,220,${glow})`;
+    ctx.beginPath(); ctx.arc(it.x, y, 22, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(it.x, y, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    if (it.kind === 'magnet') magnetIcon(it.x, y + 1, 1.05); else shieldIcon(it.x, y, 1.1);
+  }
+
+  function powerChip(x, y, kind, frac) {
+    ctx.fillStyle = C.paper;
+    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(34,51,31,0.2)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = kind === 'magnet' ? '#d64545' : '#2f86c4';
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x, y, 16, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
+    if (kind === 'magnet') magnetIcon(x, y + 1, 0.9); else shieldIcon(x, y, 0.95);
+  }
+
+  function draw() {
+    if (!skyGrad) {
+      skyGrad = ctx.createLinearGradient(0, 0, 0, PLAY_H);
+      skyGrad.addColorStop(0, C.skyTop);
+      skyGrad.addColorStop(1, C.skyLow);
+    }
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Sonne
+    ctx.fillStyle = 'rgba(255,244,194,0.35)';
+    ctx.beginPath(); ctx.arc(W - 70, 92, 52, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.sun;
+    ctx.beginPath(); ctx.arc(W - 70, 92, 34, 0, Math.PI * 2); ctx.fill();
+
+    for (const c of clouds) cloud(c);
+    hills(G.scroll * 0.2, PLAY_H - 110, 28, 0.008, C.hillFar);
+    hills(G.scroll * 0.45 + 300, PLAY_H - 48, 20, 0.013, C.hillNear);
+
+    // Windstreifen
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (const s of streaks) { ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + s.len, s.y); }
+    ctx.stroke();
+
+    for (const o of G.obs) {
+      trunk(o.x, -4, o.gapY - o.gap / 2, o.seed, true);
+      trunk(o.x, o.gapY + o.gap / 2, PLAY_H + 4, o.seed + 7, false);
+    }
+    for (const c of G.coins) if (!c.taken) coin(c);
+    for (const it of G.items) if (!it.taken) powerItem(it);
+
+    for (const p of G.parts) {
+      const a = 1 - p.life / p.max;
+      if (p.type === 'puff') {
+        ctx.fillStyle = `rgba(255,255,255,${0.7 * a})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + p.life * 2), 0, Math.PI * 2); ctx.fill();
+      } else if (p.type === 'shard') {
+        ctx.fillStyle = `rgba(170,225,255,${a})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.font = `800 ${p.size || 20}px "Baloo 2", "Trebuchet MS", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = `rgba(34,51,31,${a})`;
+        ctx.fillStyle = `rgba(255,228,144,${a})`;
+        ctx.strokeText(p.text, p.x, p.y);
+        ctx.fillText(p.text, p.x, p.y);
+      }
+    }
+
+    // Blatt
+    const L = G.leaf;
+    const live = G.state === 'playing';
+    if (live && G.magnet > 0) {
+      for (let i = 0; i < 2; i++) {
+        const ph = (G.t * 1.6 + i * 0.5) % 1;
+        ctx.strokeStyle = `rgba(214,69,69,${0.45 * (1 - ph)})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(L.x, L.y, 18 + ph * 40, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+    const blink = live && G.inv > 0 && Math.floor(G.inv * 14) % 2;
+    if (!blink) {
+      ctx.save();
+      ctx.translate(L.x, L.y);
+      ctx.rotate(L.rot + (live ? Math.sin(G.t * 7) * 0.06 : 0));
+      drawLeaf(ctx, currentSkin(), LEAF_S, G.t);
+      ctx.restore();
+    }
+    if (live && G.shield > 0 && !(G.shield < 2.5 && Math.floor(G.t * 8) % 2)) {
+      ctx.fillStyle = 'rgba(140,210,255,0.2)';
+      ctx.strokeStyle = 'rgba(170,225,255,0.9)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(L.x, L.y, 25, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath(); ctx.arc(L.x, L.y, 19, Math.PI * 1.1, Math.PI * 1.45); ctx.stroke();
+    }
+
+    // Boden
+    ctx.fillStyle = C.dirt;
+    ctx.fillRect(0, PLAY_H, W, GROUND);
+    ctx.fillStyle = C.grass;
+    ctx.fillRect(0, PLAY_H, W, 18);
+    ctx.fillStyle = C.grassDark;
+    const off = G.scroll % 14;
+    ctx.beginPath();
+    for (let x = -off - 14; x < W + 14; x += 14) {
+      ctx.moveTo(x, PLAY_H + 2); ctx.lineTo(x + 7, PLAY_H - 7); ctx.lineTo(x + 14, PLAY_H + 2);
+    }
+    ctx.fill();
+    ctx.fillRect(0, PLAY_H + 14, W, 4);
+    ctx.fillStyle = 'rgba(60,40,20,0.25)';
+    for (let x = -((G.scroll * 1) % 40); x < W; x += 40) ctx.fillRect(x + 10, PLAY_H + 34, 8, 4);
+
+    // Aktive Power-ups mit Restzeit
+    if (live) {
+      const chips = [];
+      if (G.magnet > 0) chips.push(['magnet', G.magnet / MAGNET_T]);
+      if (G.shield > 0) chips.push(['shield', G.shield / SHIELD_T]);
+      chips.forEach(([kind, frac], i) => powerChip(W / 2 + (i - (chips.length - 1) / 2) * 40, 110, kind, frac));
+    }
+  }
+
+  // ---------- Eingabe ----------
+  function tap() {
+    if (G.state === 'ready') { G.state = 'playing'; ui.hint.hidden = true; flap(); }
+    else if (G.state === 'playing') {
+      if (G.paused) { G.paused = false; ui.hint.hidden = true; }
+      flap();
+    }
+  }
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); tap(); });
+  window.addEventListener('keydown', e => {
+    if (e.code !== 'Space' && e.code !== 'ArrowUp') return;
+    if (e.target.closest && e.target.closest('button') && e.code === 'Space') return;
+    e.preventDefault();
+    if (G.state === 'dead' && G.overShown) startGame();
+    else tap();
+  });
+  document.addEventListener('visibilitychange', () => {
+    // Wer das Spiel am nächsten Tag wieder aufruft, bekommt gleich den neuen Tagesbonus.
+    if (!document.hidden && G.state === 'menu' && !ui.menu.hidden) showMenu();
+    if (document.hidden && G.state === 'playing') {
+      G.paused = true;
+      ui.hint.textContent = 'Tippen zum Weiterfliegen';
+      ui.hint.hidden = false;
+    }
+  });
+
+  $('playBtn').onclick = startGame;
+  $('againBtn').onclick = startGame;
+  $('shopBtn').onclick = () => openShop('menu');
+  $('overShopBtn').onclick = () => openShop('over');
+  $('menuBtn').onclick = toMenu;
+  $('questBtn').onclick = openQuests;
+  $('questBack').onclick = () => { refreshMenu(); showOnly('menu'); };
+  ui.dailyBtn.onclick = () => {
+    const s = dailyState();
+    if (s.claimed) return;
+    claimDaily();
+    sfx.buy();
+    const fresh = checkAchievements(false);
+    ui.dailyBtn.disabled = true;
+    ui.dailyBtn.textContent = fresh.length ? `Abgeholt! Neues Blatt: ${SKINS.find(s => s.id === fresh[0].skin).name}` : 'Abgeholt!';
+    const tile = ui.dailyDays.children[s.day - 1];
+    tile.className = 'day done' + (s.day === 7 ? ' big' : '');
+    tile.children[1].outerHTML = '<span class="check">✓</span>';
+    setTimeout(() => { refreshMenu(); showOnly('menu'); }, fresh.length ? 1800 : 800);
+  };
+  $('backBtn').onclick = () => {
+    if (shopReturn === 'over') { ui.overTotal.textContent = save.coins; showOnly('over'); }
+    else { refreshMenu(); showOnly('menu'); }
+  };
+  ui.muteBtn.onclick = () => { save.muted = !save.muted; store.set('muted', save.muted); refreshMute(); };
+
+  // ---------- Als App installieren ----------
+  // Greift nur in der eigenständig gehosteten App-Version, nicht eingebettet (z. B. als Artifact).
+  const embedded = window.top !== window;
+  const installBtn = $('installBtn');
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    installEvt = e;
+    installBtn.hidden = false;
+  });
+  installBtn.onclick = async () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    try { await installEvt.userChoice; } catch (e) {}
+    installEvt = null;
+    installBtn.hidden = true;
+  };
+  window.addEventListener('appinstalled', () => { installBtn.hidden = true; });
+  const runsAsApp = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true;
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  $('iosHint').hidden = !(isIOS && !runsAsApp && !embedded);
+  if ('serviceWorker' in navigator && !embedded && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+
+  // ---------- Start ----------
+  resize();
+  checkAchievements(false);
+  showMenu();
+  refreshMute();
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.033, (now - last) / 1000);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
