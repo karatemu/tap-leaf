@@ -1,6 +1,6 @@
-// Service Worker: macht Blattflug offline spielbar.
+// Service Worker: macht Tap Leaf offline spielbar.
 // Die Spielseite kommt bevorzugt frisch aus dem Netz (Updates kommen sofort an), alles andere aus dem Cache.
-const CACHE = 'blattflug-v1';
+const CACHE = 'tapleaf-v2';
 const SHELL = [
   './',
   './index.html',

@@ -11,14 +11,14 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Blattflug">
+<meta name="apple-mobile-web-app-title" content="Tap Leaf">
 <style>
   /* Abstand zu Notch und Home-Leiste, wie ihn sonst die Artifact-HÃ¼lle setzt */
   :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 </style>
 </head>
 <body>
-<title>Blattflug</title>
+<title>Tap Leaf</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap">
@@ -251,7 +251,7 @@ h2 { margin: 0; font-size: 34px; line-height: 1.05; text-wrap: balance; }
   <section class="overlay menu" id="menu">
     <header class="brand">
       <p class="eyebrow">Ein Blatt im Wind</p>
-      <h1>Blattflug</h1>
+      <h1>Tap Leaf</h1>
     </header>
     <div class="menu-bottom">
       <div class="stats">
@@ -374,6 +374,7 @@ h2 { margin: 0; font-size: 34px; line-height: 1.05; text-wrap: balance; }
   ];
 
   // ---------- Speicher ----------
+  // Schlüssel heißen noch nach dem alten Namen „Blattflug“, damit bestehende Spielstände erhalten bleiben.
   const store = {
     get(k, d) { try { const v = localStorage.getItem('blattflug.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('blattflug.' + k, JSON.stringify(v)); } catch (e) {} }
