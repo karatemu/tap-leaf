@@ -1,6 +1,6 @@
 // Service Worker: macht Tap Leaf offline spielbar.
 // Die Spielseite kommt bevorzugt frisch aus dem Netz (Updates kommen sofort an), alles andere aus dem Cache.
-const CACHE = 'tapleaf-v2';
+const CACHE = 'tapleaf-v3';
 const SHELL = [
   './',
   './index.html',
@@ -12,7 +12,12 @@ const SHELL = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' umgeht den Browser-Cache, damit wirklich die neuesten Dateien gespeichert werden.
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', e => {
@@ -44,14 +49,15 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Icons, Manifest und Schriften: Cache zuerst, sonst laden und merken.
-  e.respondWith(
-    caches.match(req).then(hit => hit || fetch(req).then(res => {
-      if (res.ok || res.type === 'opaque') {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy));
-      }
+  // Icons, Manifest und Schriften: sofort aus dem Cache, im Hintergrund frisch laden,
+  // damit Änderungen (z. B. ein neuer App-Name) beim nächsten Start ankommen.
+  e.respondWith(caches.open(CACHE).then(async c => {
+    const hit = await c.match(req);
+    const net = fetch(req).then(res => {
+      if (res.ok || res.type === 'opaque') c.put(req, res.clone());
       return res;
-    }))
-  );
+    }).catch(() => hit);
+    e.waitUntil(net.then(() => {}, () => {}));
+    return hit || net;
+  }));
 });
