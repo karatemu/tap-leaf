@@ -996,9 +996,10 @@ h2 { margin: 0; font-size: 34px; line-height: 1.05; text-wrap: balance; }
       c.x -= (spd * 0.15 + 6) * dt;
       if (c.x < -90 * c.s) { c.x = W + 60; c.y = 30 + Math.random() * 210; }
     }
+    // Rückenwind: Die Luft weht schneller als das Blatt fliegt, die Striche ziehen also in Flugrichtung.
     if (!frozen) for (const s of streaks) {
-      s.x -= (spd * 1.8 + 120) * dt;
-      if (s.x < -s.len) { s.x = W + Math.random() * 200; s.y = 40 + Math.random() * (PLAY_H - 80); }
+      s.x += (spd * 0.7 + 90) * dt;
+      if (s.x > W) { s.x = -s.len - Math.random() * 200; s.y = 40 + Math.random() * (PLAY_H - 80); }
     }
 
     if (G.state === 'menu' || G.state === 'ready') {
